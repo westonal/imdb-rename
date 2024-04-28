@@ -1,5 +1,6 @@
 import os.path
 import re
+from functools import cached_property
 from pathlib import Path
 
 import duckduckgo_search
@@ -8,16 +9,17 @@ import asyncio
 from rich import print as rprint
 
 import click
+from rich.markup import escape
 from rich.table import Table
 
 
 @click.command()
 @click.argument("file")
 @click.option("--edition", "-e", help='Edition of the file')
-@click.option("--title", "-t", help='Basic title of film to search for, if missing will get from file name')
-@click.option("--rename", "-r", is_flag=True, help='Rename the file')
-@click.option("--imdb-key", "-k", help='Filter search results to this key')
-def cli(file, edition, title, rename, imdb_key):
+@click.option("--search_title", "-s", "title",
+              help='Basic title of film to search for, if missing will get from file name')
+@click.option("--imdb-key", "-t", help='Filter search results to this key')
+def cli(file, edition, title, imdb_key):
     if not file:
         rprint("No file specified")
         exit(1)
@@ -28,19 +30,34 @@ def cli(file, edition, title, rename, imdb_key):
 
     match = re.match(r"(.*)_t\d+.mkv", path.name)
 
+    if imdb_key:
+        # ensure starts with tt
+        if not imdb_key.startswith("t"):
+            imdb_key = f"t{imdb_key}"
+        if not imdb_key.startswith("tt"):
+            imdb_key = f"t{imdb_key}"
+
     if not match:
         rprint("[red]Not an expected mkv name")
         exit(1)
 
     search_title = title or match[1]
-    rprint(f"Searching for [cyan]{search_title}")
+    if search_title == "title":
+        rprint('[yellow]Specify a search title using [cyan]--search "<title>"[/] or [cyan]-s"<title>"[/]')
+        exit(1)
+
+    rprint(f"Searching for [cyan]{search_title}[/]")
     imdb_results = imdb_search(search_title)
 
     if imdb_key:
         imdb_results = [r for r in imdb_results if r.key.startswith(imdb_key)]
 
     if not imdb_results:
-        rprint("[red]Could not find details of film")
+        rprint(f'[red]Could not find any IMDB search results for the film "[cyan]{search_title}[/]"')
+        if title:
+            rprint('[yellow]Try specifying a different search title')
+        else:
+            rprint('[yellow]Try specifying the search title using [cyan]--search "<title>"[/] or [cyan]-s"<title>"[/]')
         exit(1)
 
     multiple_results = len(imdb_results) > 1
@@ -59,13 +76,22 @@ def cli(file, edition, title, rename, imdb_key):
     if multiple_results:
         rprint(
             "[yellow]Run again with [cyan]--imdb-key <key prefix>[/] or just "
-            "[cyan]-k<key prefix>[/] for your chosen title"
+            f"[cyan]-<key prefix>[/] for your chosen title. e.g. [cyan]-{imdb_results[0].key}[/]"
         )
         exit(1)
 
     imdb_result = imdb_results[0]
 
-    imdb_title = f"{imdb_result.title} ({imdb_result.year})"
+    imdb_title = imdb_result.title_and_year
+
+    if not edition:
+        for e in ["Extended", "Theatrical", "Director's Cut"]:
+            if f"({e})" in path.name:
+                if confirm(f'[yellow]Do you want to use the edition "[cyan]{e}[/]" detected in file name?',
+                           default=True):
+                    edition = e
+                    break
+
     if edition:
         imdb_title = f"{imdb_title} {{edition-{edition}}}"
     imdb_title = imdb_title.replace(": ", " - ")
@@ -73,18 +99,25 @@ def cli(file, edition, title, rename, imdb_key):
     new_file_title = f"{imdb_title} {{imdb-{imdb_result.key}}}.mkv"
     new_file_path = os.path.join(path.parent, imdb_title, new_file_title)
 
-    if rename:
-        rprint(
-            f"[yellow]Rename:\n"
+    if confirm(
+            f"[yellow]Do you want to rename:\n"
             f"  [cyan]{path.name}[/]\n"
             f"to:\n"
             f"  [cyan]{Path(new_file_path).relative_to(path.parent)}[/]"
-            f"\n? (y/N)",
-            end="")
-        if click.prompt("", default="n", show_default=False) == 'y':
-            rprint("Rename")
-            Path(new_file_path).parent.mkdir(parents=True, exist_ok=True)
-            path.rename(new_file_path)
+            f"\n?", default=False):
+        Path(new_file_path).parent.mkdir(parents=True, exist_ok=True)
+        path.rename(new_file_path)
+        rprint("[green]Renamed")
+
+
+def confirm(message, default=False):
+    rprint(message, end="")
+    if default:
+        hint = '[Y/n]'
+    else:
+        hint = '[y/N]'
+    rprint(f"[reset] {escape(hint)}", end="")
+    return click.prompt("", default='y' if default else 'n', show_default=False) in ['y', 'Y']
 
 
 def imdb_search(title):
@@ -120,6 +153,10 @@ class ImdbEntry:
         self.year = year
         self.url = url
         self.overview = overview
+
+    @cached_property
+    def title_and_year(self):
+        return f"{self.title} ({self.year})"
 
 
 async def ddg_imdb_search_async(search_term):
