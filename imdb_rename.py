@@ -19,7 +19,8 @@ from rich.table import Table
 @click.option("--search", "-s", "search_title",
               help='Basic title of film to search for, if missing will get from file name')
 @click.option("--imdb-key", "-t", help='Filter search results to this key')
-def cli(file, edition, search_title, imdb_key):
+@click.option("--lucky", "-l", is_flag=True, help='Feeling lucky? Take the first result')
+def cli(file, edition, search_title, imdb_key, lucky):
     if not file:
         rprint("No file specified")
         exit(1)
@@ -51,6 +52,9 @@ def cli(file, edition, search_title, imdb_key):
 
     rprint(f"Searching for [cyan]{search_title}[/]")
     imdb_results = imdb_search(search_title)
+
+    if lucky:
+        imdb_results = imdb_results[:1]
 
     if imdb_key:
         imdb_results = [r for r in imdb_results if r.key.startswith(imdb_key)]
