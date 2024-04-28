@@ -2,7 +2,9 @@ import os.path
 import re
 from pathlib import Path
 
-import serpapi
+import duckduckgo_search
+import asyncio
+
 from rich import print as rprint
 
 import click
@@ -29,13 +31,22 @@ def cli(file, edition, title):
 
     search_title = title or match[1]
     rprint(f"Searching for [cyan]{search_title}")
-    imdb_title, imdb_key, imdb_link = imdb_search(search_title)
-    if not imdb_key:
+    imdb_results = imdb_search(search_title)
+
+    if not imdb_results:
         rprint("[red]Could not find details of film")
         exit(1)
 
-    rprint(f"[green]Found [cyan]{imdb_title}[/cyan], imdb reference [cyan]{imdb_key}[/cyan]")
+    if len(imdb_results) > 1:
+        rprint("Multiple results")
+        rprint(imdb_results)
+        #exit(1)
+
+    imdb_title, imdb_key, imdb_link, imdb_body = imdb_results[0]
+
+    rprint(f"[green]Found [cyan]{imdb_title}[/], imdb reference [cyan]{imdb_key}[/]")
     rprint(imdb_link)
+    rprint(f"[cyan]{imdb_body}[/]")
 
     if edition:
         imdb_title = f"{imdb_title} {{edition-{edition}}}"
@@ -44,51 +55,34 @@ def cli(file, edition, title):
     new_file_title = f"{imdb_title} {{imdb-{imdb_key}}}.mkv"
     new_file_path = os.path.join(path.parent, imdb_title, new_file_title)
 
-    # Path(new_file_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(new_file_path).parent.mkdir(parents=True, exist_ok=True)
     rprint(new_file_title)
     rprint(new_file_path)
 
-
-def imdb_search(name):
-    # params = {
-    #     "api_key": "8fa8cc8db2f79a57f0ff96afac7e9bc4251ee734447b67dbbec623975f570a99",
-    #     "engine": "duckduckgo",
-    #     "q": f"imdb: {name}",
-    #     "kl": "us-en"
-    # }
-    #
-    # search = serpapi.search(params)
-    # search = {'organic_results': [{'link': 'https://www.imdb.com/title/tt1170358/',
-    #                                'title': 'The Hobbit: The Desolation of Smaug (2013) - IMDb'}]}
+    path.rename(new_file_path)
 
 
-    for result in search['organic_results']:
-        rprint(result['link'])
-        rprint(result['title'])
-        imdb_link = re.match(r".*\Wimdb\.com/title/(tt\d+)", result['link'])
+def imdb_search(title):
+    results = []
+
+    for result in ddg_imdb_search(f"imdb: {title}"):
+        imdb_link = re.match(r".*\Wimdb\.com/title/(tt\d+)", result['href'])
         imdb_title = re.match(r"(.*) - IMDb", result['title'])
         if imdb_link and imdb_title:
             imdb_key = imdb_link[1]
             imdb_title = imdb_title[1]
-            return imdb_title, imdb_key, imdb_link[0]
+            results += [(imdb_title, imdb_key, imdb_link[0], result['body'])]
 
-    return None, None
-
-
-import asyncio
-
-from duckduckgo_search import AsyncDDGS
-
-async def aget_results(word):
-    results = await AsyncDDGS().text(word, max_results=1)
     return results
 
-async def main():
-    words = ["imdb: The Hobbit- The Desolation of Smaug (Extended)"]
-    tasks = [aget_results(w) for w in words]
-    results = await asyncio.gather(*tasks)
-    return results
+
+async def ddg_imdb_search_async(search_term):
+    return await duckduckgo_search.AsyncDDGS().text(search_term, max_results=10)
+
+
+def ddg_imdb_search(title):
+    return asyncio.run(ddg_imdb_search_async(title))
+
 
 if __name__ == "__main__":
-    results = asyncio.run(main())
-    print(results)
+    cli()
