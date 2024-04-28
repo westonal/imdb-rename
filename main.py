@@ -16,10 +16,10 @@ from rich.table import Table
 @click.command()
 @click.argument("file")
 @click.option("--edition", "-e", help='Edition of the file')
-@click.option("--search_title", "-s", "title",
+@click.option("--search", "-s", "search_title",
               help='Basic title of film to search for, if missing will get from file name')
 @click.option("--imdb-key", "-t", help='Filter search results to this key')
-def cli(file, edition, title, imdb_key):
+def cli(file, edition, search_title, imdb_key):
     if not file:
         rprint("No file specified")
         exit(1)
@@ -28,21 +28,24 @@ def cli(file, edition, title, imdb_key):
         rprint(f"[red]File [cyan]{file}[/] not found")
         exit(1)
 
-    match = re.match(r"(.*)_t\d+.mkv", path.name)
+    if not search_title:
+        match = re.match(r"(.*)(?:_t\d+)?.mkv", path.name)
 
-    if imdb_key:
-        # ensure starts with tt
-        if not imdb_key.startswith("t"):
-            imdb_key = f"t{imdb_key}"
-        if not imdb_key.startswith("tt"):
-            imdb_key = f"t{imdb_key}"
+        if imdb_key:
+            # ensure starts with tt
+            if not imdb_key.startswith("t"):
+                imdb_key = f"t{imdb_key}"
+            if not imdb_key.startswith("tt"):
+                imdb_key = f"t{imdb_key}"
 
-    if not match:
-        rprint("[red]Not an expected mkv name")
-        exit(1)
+        if not match:
+            rprint("[red]Not an expected mkv name")
+            exit(1)
 
-    search_title = title or match[1]
+        search_title = match[1]
+
     if search_title == "title":
+        rprint("[red]The file name is not specific enough")
         rprint('[yellow]Specify a search title using [cyan]--search "<title>"[/] or [cyan]-s"<title>"[/]')
         exit(1)
 
@@ -54,7 +57,7 @@ def cli(file, edition, title, imdb_key):
 
     if not imdb_results:
         rprint(f'[red]Could not find any IMDB search results for the film "[cyan]{search_title}[/]"')
-        if title:
+        if search_title:
             rprint('[yellow]Try specifying a different search title')
         else:
             rprint('[yellow]Try specifying the search title using [cyan]--search "<title>"[/] or [cyan]-s"<title>"[/]')
