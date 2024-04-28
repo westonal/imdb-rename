@@ -20,7 +20,7 @@ from rich.table import Table
               help='Basic title of film to search for, if missing will get from file name')
 @click.option("--imdb-key", "-t", help='Filter search results to this key')
 @click.option("--lucky", "-l", is_flag=True, help='Feeling lucky? Take the first result')
-def cli(file, edition, search_title, imdb_key, lucky):
+def imdb_rename(file, edition, search_title, imdb_key, lucky):
     if not file:
         rprint("No file specified")
         exit(1)
@@ -175,4 +175,4 @@ def ddg_imdb_search(title):
 
 
 if __name__ == "__main__":
-    cli()
+    imdb_rename()
